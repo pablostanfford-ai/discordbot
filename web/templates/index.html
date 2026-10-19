@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero container">
+  {% if demo %}<span class="badge-demo">ДЕМО-РЕЖИМ — бот не подключён, данные демонстрационные</span>{% endif %}
+  <h1>Управляй Discord-сервером<br>как с UniPer</h1>
+  <p>Мощный бот с модерацией, AutoMod, уровнями, приветствиями и логированием —
+     и стильный тёмный дашборд для управления всем этим в один клик.</p>
+  <div class="hero-actions">
+    <a class="btn discord" href="/api/auth/login">🔷 Добавить сервер</a>
+    <a class="btn secondary" href="/dashboard">📊 Открыть панель</a>
+  </div>
+</section>
+
+<section class="features container">
+  <div class="feature"><div class="icon">🛡️</div><h3>AutoMod</h3>
+    <p>Антиспам упоминаниями и ссылками, фильтр слов, наказание: удаление / тайм-аут / кик. Настраивается прямо из панели.</p></div>
+  <div class="feature"><div class="icon">👋</div><h3>Приветствия</h3>
+    <p>Кастомные embed-сообщения при входе и выходе, автороли новые участники, переменные {user}, {server_count}.</p></div>
+  <div class="feature"><div class="icon">📈</div><h3>Уровни и XP</h3>
+    <p>Начисление опыта за общение, /rank с прогресс-баром, таблица лидеров и роль-награды за уровни.</p></div>
+  <div class="feature"><div class="icon">🔨</div><h3>Модерация</h3>
+    <p>/ban, /kick, /timeout, /warn с журналом действий — все наказания видны в истории на дашборде.</p></div>
+  <div class="feature"><div class="icon">📝</div><h3>Логирование</h3>
+    <p>Редактирование и удаление сообщений, вход/выход участников — в выбранный канал сервера.</p></div>
+  <div class="feature"><div class="icon">⚡</div><h3>Мгновенные настройки</h3>
+    <p>Любое изменение в дашборде применяется ботом сразу, без рестарта. Live-статистика по командам и аптайму.</p></div>
+</section>
+{% endblock %}
