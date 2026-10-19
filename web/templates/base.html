@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}UniDash — Discord бот + дашборд{% endblock %}</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <script src="/static/js/common.js" defer></script>
+  {% block head_scripts %}{% endblock %}
+</head>
+<body>
+  <div id="navbar"></div>
+  {% block content %}{% endblock %}
+  <div class="footer container">⚡ UniDash — self-hosted Discord bot & dashboard · discord.py + FastAPI</div>
+</body>
+</html>
