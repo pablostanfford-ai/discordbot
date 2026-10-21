@@ -1,8 +1,12 @@
-discord.py>=2.4
+# --- Telegram HelpDesk (бот поддержки + Mini App) — ЗАВИСИМОСТИ ЭТОГО ПРОЕКТА ---
 fastapi>=0.115
 uvicorn[standard]>=0.30
-aiohttp>=3.9
 pyjwt>=2.8
 python-dotenv>=1.0
-jinja2>=3.1
 aiogram>=3.13
+
+# --- Discord Bot + Dashboard: ОТДЕЛЬНЫЙ ПРОЕКТ (папки bot/ и web/) ---
+# Раскомментируйте, если работаете с Discord-проектом в этом же окружении:
+# discord.py>=2.4
+# aiohttp>=3.9
+# jinja2>=3.1

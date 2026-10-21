@@ -22,11 +22,12 @@ store = TicketStore(DATA_DIR)
 
 
 async def run_bot() -> None:
-    from helpdesk.tg_bot import setup_bot
+    from helpdesk.tg_bot import setup_bot, sla_monitor
 
     bot, dp, _ = await setup_bot()
     if bot is None or dp is None:
         return
+    asyncio.create_task(sla_monitor(store))
     # передаём хранилище в обработчики через workflow_data
     kwargs = {"store": store}
     try:

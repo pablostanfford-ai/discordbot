@@ -35,7 +35,7 @@
     <!-- СПИСОК -->
     <section id="view-list" class="view">
       <div class="stats-row" id="stats-row"></div>
-      <input id="search" class="search" type="search" placeholder="Поиск по имени, тексту, № тикета…">
+      <input id="search" class="search" type="search" placeholder="Поиск по имени, тексту, тегу, № тикета…">
       <div class="tabs" id="status-tabs">
         <button data-status="all" class="tab active">Все</button>
         <button data-status="open" class="tab">Новые</button>
@@ -43,6 +43,7 @@
         <button data-status="answered" class="tab">Отвечено</button>
         <button data-status="closed" class="tab">Закрытые</button>
       </div>
+      <div class="tag-cloud hidden" id="tag-cloud"></div>
       <div id="ticket-list" class="ticket-list"><div class="empty">Загрузка…</div></div>
     </section>
 
@@ -50,6 +51,11 @@
     <section id="view-chat" class="view hidden">
       <div id="chat-info" class="chat-info"></div>
       <div id="chat-messages" class="chat-messages"></div>
+      <div class="tags-editor">
+        <span class="dim tags-label">Теги:</span>
+        <span id="tags-chips"></span>
+        <input id="tag-input" class="tag-input" type="text" placeholder="+ тег (Enter)" maxlength="30">
+      </div>
       <div class="chat-actions">
         <button data-set-status="in_progress" class="chip">⏳ В работу</button>
         <button data-set-status="closed" class="chip ok">✅ Закрыть</button>

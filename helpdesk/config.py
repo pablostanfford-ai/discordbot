@@ -42,6 +42,10 @@ class TgConfig:
 
     DEMO_MODE: bool = _bool("DEMO_MODE", True)
 
+    # папка для скриншотов из тикетов (раздаётся веб-приложением по /photos/<file>)
+    PHOTO_DIR: Path = Path(os.getenv("TG_PHOTO_DIR", PROJECT_ROOT / "data" / "photos"))
+    PHOTO_DIR.mkdir(parents=True, exist_ok=True)
+
     @classmethod
     def has_bot_token(cls) -> bool:
         return bool(cls.BOT_TOKEN)

@@ -12,12 +12,12 @@ from pydantic import BaseModel, Field
 
 from helpdesk import tg_bot
 from helpdesk.auth import COOKIE_NAME, create_agent_token, decode_agent_session, require_agent, validate_init_data
-from helpdesk.config import ROOT_DIR, config
+from helpdesk.config import config
 from helpdesk.store import MAX_MESSAGE_LEN, STATUS_CLOSED, STATUS_IN_PROGRESS, TicketStore
 
-log = logging.getLogger("telegram.webapp")
+log = logging.getLogger("helpdesk.webapp")
 
-WEBAPP_DIR = ROOT_DIR / "webapp"
+WEBAPP_DIR = Path(__file__).resolve().parent  # /workspace/helpdesk/webapp
 
 
 class AuthBody(BaseModel):
@@ -30,6 +30,10 @@ class ReplyBody(BaseModel):
 
 class StatusBody(BaseModel):
     status: str
+
+
+class TagsBody(BaseModel):
+    tags: list[str] = []
 
 
 def create_webapp_app(store: TicketStore) -> FastAPI:
@@ -75,10 +79,12 @@ def create_webapp_app(store: TicketStore) -> FastAPI:
 
     # ---------- тикеты ----------
     @app.get("/api/tickets")
-    async def tickets(request: Request, status: str = "all", search: str = "", agent: dict = Depends(require_agent)):
-        rows = await store.list_tickets(status=status or None, search=search)
+    async def tickets(request: Request, status: str = "all", search: str = "", tag: str = "",
+                      agent: dict = Depends(require_agent)):
+        rows = await store.list_tickets(status=status or None, search=search, tag=tag or None)
         stats = await store.stats()
-        return {"tickets": rows, "stats": stats, "server_time": int(time.time())}
+        return {"tickets": rows, "stats": stats, "tags": await store.all_tags(),
+                "server_time": int(time.time())}
 
     @app.get("/api/tickets/{ticket_id}")
     async def ticket_detail(ticket_id: str, agent: dict = Depends(require_agent)):
@@ -112,16 +118,34 @@ def create_webapp_app(store: TicketStore) -> FastAPI:
                 await store.add_message(ticket_id, "agent", "Тикет закрыт оператором.")
         return {"ok": True, "ticket": updated}
 
+    @app.post("/api/tickets/{ticket_id}/tags")
+    async def set_tags(ticket_id: str, body: TagsBody, agent: dict = Depends(require_agent)):
+        t = await store.set_tags(ticket_id, body.tags)
+        if not t:
+            raise HTTPException(404, "Тикет не найден")
+        return {"ok": True, "ticket": t, "tags": await store.all_tags()}
+
+    # ---------- скриншоты из тикетов ----------
+    if config.PHOTO_DIR.exists():
+        app.mount("/photos", StaticFiles(directory=str(config.PHOTO_DIR)), name="ticket-photos")
+
     # ---------- демо-обращения (для теста панели без реального бота) ----------
     @app.post("/api/demo/seed")
     async def demo_seed(agent: dict = Depends(require_agent)):
         """Создаёт 2 тестовых тикета, чтобы посмотреть работу панели без бота."""
         made = []
-        for i, (name, uname, cat, text) in enumerate([
+        demo_specs = [
             ("Алексей Петров", "alex_p", "login", "Не могу войти в аккаунт: пишет «неверный пароль», хотя я его не менял. Пробовал сбросить — письмо не приходит."),
             ("Мария Иванова", "m_ivanova", "network", "После обновления приложение не подключается к серверу, бесконечный «поиск соединения». Wi-Fi работает, другие приложения тоже."),
-        ]):
+        ]
+        for i, (name, uname, cat, text) in enumerate(demo_specs):
             t = await store.create_ticket(user_id=900000 + i, category=cat, text=text, username=uname, full_name=name)
+            # добавим немного реализма: теги и «просроченный» SLA у первого тикета
+            if i == 0:
+                await store.set_tags(t["id"], ["срочно", "аккаунт"])
+                tickets = await store._tickets()  # noqa: SLF001 — демо-хак
+                tickets[t["id"]]["sla_deadline"] = int(time.time()) - 3600
+                await store._flush_tickets()  # noqa: SLF001
             made.append(t["id"])
         return {"ok": True, "created": made}
 

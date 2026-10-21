@@ -118,6 +118,49 @@ html, body {
   min-width: 20px; height: 20px; border-radius: 10px; display: grid; place-items: center; padding: 0 6px;
 }
 
+/* ===== SLA / теги ===== */
+.sla { font-size: 11px; color: var(--hint); white-space: nowrap; }
+.sla.overdue { color: var(--red); font-weight: 700; }
+.ticket-card.overdue { border-color: rgba(224, 82, 82, .55); }
+
+.mini-tag {
+  font-size: 11px; color: var(--blue); background: rgba(90, 167, 232, .12);
+  padding: 2px 8px; border-radius: 10px; white-space: nowrap;
+}
+.tag-cloud { display: flex; flex-wrap: wrap; gap: 6px; margin: -4px 0 12px; }
+.tag-pill {
+  border: 1px solid var(--border); background: var(--bg-2); color: var(--hint);
+  border-radius: 16px; padding: 4px 12px; font-size: 12px; cursor: pointer;
+}
+.tag-pill.active { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+
+.tags-editor {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+  padding: 6px 0; flex-shrink: 0;
+}
+.tags-label { padding-right: 2px; }
+.tag-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 12px; color: var(--blue); background: rgba(90, 167, 232, .12);
+  padding: 3px 6px 3px 10px; border-radius: 12px;
+}
+.tag-x {
+  border: 0; background: transparent; color: var(--hint); font-size: 14px;
+  cursor: pointer; line-height: 1; padding: 0 3px;
+}
+.tag-x:hover { color: var(--red); }
+.tag-input {
+  width: 120px; padding: 5px 10px; border-radius: 12px; border: 1px dashed var(--border);
+  background: transparent; color: var(--text); font-size: 12px; outline: none;
+}
+.tag-input:focus { border-color: var(--accent); border-style: solid; }
+
+.msg.has-photo { max-width: 88%; }
+.msg-photo {
+  display: block; max-width: 100%; max-height: 260px; border-radius: 10px;
+  margin-bottom: 6px; object-fit: cover;
+}
+
 /* ===== чат ===== */
 .chat-info {
   background: var(--bg-2); border: 1px solid var(--border); border-radius: 12px;

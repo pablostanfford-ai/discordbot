@@ -19,6 +19,7 @@
     list: $("#ticket-list"),
     viewList: $("#view-list"), viewChat: $("#view-chat"),
     chatInfo: $("#chat-info"), chatMsgs: $("#chat-messages"),
+    tagCloud: $("#tag-cloud"), tagsChips: $("#tags-chips"), tagInput: $("#tag-input"),
     replyForm: $("#reply-form"), replyText: $("#reply-text"),
     actions: document.querySelector(".chat-actions"),
   };
@@ -32,7 +33,9 @@
 
   let currentStatus = "all";
   let currentSearch = "";
+  let currentTag = null;
   let currentTicketId = null;
+  let currentTicketData = null;
   let pollTimer = null;
 
   // ---------- helpers ----------
@@ -46,6 +49,15 @@
     const sameDay = d.toDateString() === now.toDateString();
     const hm = d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
     return sameDay ? hm : d.toLocaleDateString("ru-RU", { day: "2-digit", month: "short" }) + " " + hm;
+  }
+
+  function fmtSla(sec) {
+    if (sec == null) return "";
+    const neg = sec < 0;
+    const s = Math.abs(sec);
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+    const txt = h > 0 ? `${h}ч ${m}м` : `${m}м`;
+    return neg ? `−${txt}` : txt;
   }
 
   function toast(msg) {
@@ -135,8 +147,10 @@
   async function loadTickets() {
     try {
       const q = new URLSearchParams({ status: currentStatus, search: currentSearch });
+      if (currentTag) q.set("tag", currentTag);
       const data = await api("/api/tickets?" + q.toString());
       renderStats(data.stats);
+      renderTagCloud(data.tags || []);
       renderList(data.tickets);
     } catch (e) {
       if (e.status === 401) { location.reload(); return; }
@@ -154,22 +168,41 @@
       <div class="stat"><b>${s.unread_messages}</b><span>нечитанных</span></div>`;
   }
 
+  function renderTagCloud(tags) {
+    if (!tags.length) { el.tagCloud.classList.add("hidden"); return; }
+    el.tagCloud.classList.remove("hidden");
+    el.tagCloud.innerHTML = tags.map((t) =>
+      `<button class="tag-pill${t === currentTag ? " active" : ""}" data-tag="${esc(t)}">#${esc(t)}</button>`).join("");
+    el.tagCloud.querySelectorAll(".tag-pill").forEach((p) =>
+      p.addEventListener("click", () => {
+        currentTag = p.dataset.tag === currentTag ? null : p.dataset.tag;
+        loadTickets();
+      }));
+  }
+
   function renderList(rows) {
     if (!rows.length) { el.list.innerHTML = '<div class="empty">Тикетов нет 🎉</div>'; return; }
-    el.list.innerHTML = rows.map((t) => `
-      <div class="ticket-card" data-id="${t.id}">
+    el.list.innerHTML = rows.map((t) => {
+      let slaHtml = "";
+      if (t.sla_overdue) slaHtml = `<span class="sla overdue" title="SLA просрочен — нет ответа оператора">⚠ SLA −${fmtSla(-t.sla_left).replace("−","")}</span>`;
+      else if (t.sla_left != null) slaHtml = `<span class="sla" title="Осталось до дедлайна SLA">⏱ ${fmtSla(t.sla_left)}</span>`;
+      const tagsHtml = (t.tags || []).map((x) => `<span class="mini-tag">#${esc(x)}</span>`).join("");
+      return `
+      <div class="ticket-card${t.sla_overdue ? " overdue" : ""}" data-id="${t.id}">
         <div class="tc-top">
           <span class="tc-num">#${t.number}</span>
           <span class="tc-user">${esc(t.user)}${t.username ? " <span class='dim'>@" + esc(t.username) + "</span>" : ""}</span>
-          <span class="tc-time">${fmtTime(t.updated_at)}</span>
+          <span class="tc-time">${t.has_photo ? "📷 " : ""}${fmtTime(t.updated_at)}</span>
         </div>
         <div class="tc-last">${t.last_author === "agent" ? "<b>Вы:</b> " : ""}${esc(t.last_message)}</div>
         <div class="tc-bottom">
           <span class="badge ${t.status}">${STATUS_LABEL[t.status] || t.status}</span>
           <span class="cat-tag">${CATS[t.category] || esc(t.category)}</span>
+          ${slaHtml}${tagsHtml}
           ${t.unread_agent ? `<span class="unread">${t.unread_agent}</span>` : ""}
         </div>
-      </div>`).join("");
+      </div>`;
+    }).join("");
     el.list.querySelectorAll(".ticket-card").forEach((card) =>
       card.addEventListener("click", () => openTicket(card.dataset.id)));
   }
@@ -218,7 +251,16 @@
   function loadTicketsSoon() { /* список обновится по polling */ }
 
   function renderChat(t) {
+    currentTicketData = t;
     el.title.textContent = `#${t.number} · ${t.full_name}`;
+    const answered = t.messages.some((m) => m.author === "agent");
+    let slaInfo = "";
+    if (!answered && t.status !== "closed" && t.sla_deadline) {
+      const left = t.sla_deadline - Math.floor(Date.now() / 1000);
+      slaInfo = left < 0
+        ? `<span class="sla overdue">⚠ SLA просрочен на ${fmtSla(-left).replace("−", "")}</span>`
+        : `<span class="sla">⏱ до SLA: ${fmtSla(left)}</span>`;
+    }
     el.chatInfo.innerHTML = `
       <div class="row">
         <span>👤 ${esc(t.full_name)}${t.username ? " <span class='dim'>@" + esc(t.username) + "</span>" : ""}
@@ -227,11 +269,15 @@
       </div>
       <div class="row" style="margin-top:4px">
         <span class="dim">${CATS[t.category] || esc(t.category)} · создан ${fmtTime(t.created_at)}</span>
+        ${slaInfo}
       </div>`;
 
-    const prevLen = el.chatMsgs.scrollHeight + el.chatMsgs.scrollTop;
-    el.chatMsgs.innerHTML = t.messages.map((m) => `
-      <div class="msg ${m.author}">${esc(m.text)}<small>${fmtTime(m.ts)}</small></div>`).join("") +
+    el.chatMsgs.innerHTML = t.messages.map((m) => {
+      const photo = m.photo_url
+        ? `<a href="${esc(m.photo_url)}" target="_blank"><img class="msg-photo" src="${esc(m.photo_url)}" alt="скриншот"></a>`
+        : "";
+      return `<div class="msg ${m.author}${m.kind === "photo" ? " has-photo" : ""}">${photo}${esc(m.text)}<small>${fmtTime(m.ts)}</small></div>`;
+    }).join("") +
       (t.status === "closed" ? '<div class="msg system">Тикет закрыт. Ответьте — он снова откроется.</div>' : "");
     el.chatMsgs.scrollTop = el.chatMsgs.scrollHeight;
 
@@ -239,10 +285,46 @@
     el.actions.querySelectorAll("[data-set-status]").forEach((b) => {
       b.classList.toggle("hidden", b.dataset.setStatus === t.status);
     });
+
+    renderTagChips(t.tags || []);
   }
+
+  function renderTagChips(tags) {
+    el.tagsChips.innerHTML = tags.map((x) =>
+      `<span class="tag-chip">#${esc(x)}<button class="tag-x" data-remove="${esc(x)}" title="Убрать">×</button></span>`).join("");
+    el.tagsChips.querySelectorAll(".tag-x").forEach((btn) =>
+      btn.addEventListener("click", async () => {
+        const next = tags.filter((x) => x !== btn.dataset.remove);
+        await saveTags(next);
+      }));
+  }
+
+  async function saveTags(list) {
+    if (!currentTicketId) return;
+    try {
+      const r = await api(`/api/tickets/${currentTicketId}/tags`, {
+        method: "POST", body: JSON.stringify({ tags: list }),
+      });
+      renderChat(r.ticket);
+    } catch (e) { toast("Ошибка: " + e.message); }
+  }
+
+  el.tagInput.addEventListener("keydown", (ev) => {
+    if (ev.key !== "Enter") return;
+    ev.preventDefault();
+    const val = el.tagInput.value.trim().toLowerCase();
+    if (!val) return;
+    const t = currentTicketData;
+    if (!t) return;
+    const tags = (t.tags || []).slice();
+    if (!tags.includes(val)) tags.push(val);
+    el.tagInput.value = "";
+    saveTags(tags);
+  });
 
   el.back.addEventListener("click", () => {
     currentTicketId = null;
+    currentTicketData = null;
     el.viewChat.classList.add("hidden");
     el.viewList.classList.remove("hidden");
     el.back.classList.add("hidden");

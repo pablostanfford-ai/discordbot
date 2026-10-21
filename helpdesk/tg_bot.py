@@ -1,13 +1,15 @@
 """Telegram-бот технической поддержки (aiogram 3).
 
-Пользователь: /start → выбор категории → описание проблемы → создаётся тикет.
+Пользователь: /start → выбор категории → описание проблемы (+ скриншоты) → тикет.
 Любое сообщение пользователя попадает в его открытый тикет, ответы оператора
-бот доставляет прямо в личку. Операторы получают уведомления о новых тикетах
-и кнопку «Открыть панель» (Mini App).
+бот доставляет прямо в личку. Операторы получают уведомления о новых тикетах,
+нарушениях SLA и кнопку «Открыть панель» (Mini App).
 """
 from __future__ import annotations
 
+import asyncio
 import logging
+from pathlib import Path
 
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.filters import CommandStart
@@ -21,7 +23,7 @@ from aiogram.types import (
 from helpdesk.config import config
 from helpdesk.store import STATUS_CLOSED, TicketStore
 
-log = logging.getLogger("telegram.bot")
+log = logging.getLogger("helpdesk.bot")
 router = Router()
 
 CATEGORIES = {
@@ -90,7 +92,7 @@ async def user_message(message: Message, store: TicketStore) -> None:
     pending = state.pop(uid, None)
     open_ticket = await find_open_ticket(store, uid)
 
-    if pending is not None:
+    if pending is not None and pending.get("category"):
         ticket = await store.create_ticket(
             user_id=uid,
             category=pending["category"],
@@ -100,7 +102,8 @@ async def user_message(message: Message, store: TicketStore) -> None:
         )
         await message.answer(
             f"✅ Тикет <b>#{ticket['number']}</b> создан ({_category_title(ticket['category'])}).\n"
-            "Оператор получит уведомление и ответит здесь. Обычно отвечаем в рабочее время.",
+            "Оператор получит уведомление и ответит здесь. Обычно отвечаем в рабочее время.\n\n"
+            "💡 Если есть скриншот ошибки — пришлите его фото, это ускорит решение.",
         )
         await notify_admins(store, ticket)
         return
@@ -121,10 +124,30 @@ async def user_message(message: Message, store: TicketStore) -> None:
     )
 
 
-@router.message(~F.text)
+@router.message(F.photo)
+async def user_photo(message: Message, store: TicketStore) -> None:
+    """Скриншот от пользователя → скачиваем и прикрепляем к открытому тикету."""
+    uid = message.from_user.id
+    await store.remember_user(uid, message.from_user.username or "", message.from_user.full_name)
+    open_ticket = await find_open_ticket(store, uid)
+    if not open_ticket:
+        await message.reply("Сначала опишите проблему текстом — отправьте /start 👆")
+        return
+    photo = message.photo[-1]  # самое большое разрешение
+    url = await download_photo(photo.file_unique_id, config.PHOTO_DIR / f"{photo.file_unique_id}.jpg")
+    caption = (message.caption or "").strip()
+    updated = await store.add_message(open_ticket["id"], "user",
+                                      caption or "📷 Скриншот от клиента",
+                                      kind="photo", photo_url=url)
+    await message.answer(f"📷 Скриншот прикреплён к тикету <b>#{open_ticket['number']}</b>.")
+    if updated and url:
+        await notify_admins_message(updated, f"прислал(а) скриншот. {caption[:200]}")
+
+
+@router.message(~F.text & ~F.photo)
 async def unsupported(message: Message) -> None:
-    await message.answer("Пока я принимаю только текстовые описания проблемы 🙂 "
-                         "Пришлите текст — мы всё прочитаем.")
+    await message.answer("Пока я принимаю текст и скриншоты (фото) 🙂 "
+                         "Пришлите описание проблемы или снимок экрана.")
 
 
 @router.message(F.text == "/myticket")
@@ -234,6 +257,50 @@ async def deliver_status_notice(user_id: int, ticket_number: int, status: str) -
         await bot.send_message(user_id, text, parse_mode="HTML")
     except Exception as e:  # noqa: BLE001
         log.warning("Не удалось отправить статус пользователю %s: %s", user_id, e)
+
+
+# ---------- скриншоты ----------
+async def download_photo(file_unique_id: str, dest: Path) -> str | None:
+    """Скачивает фото по file_unique_id в data/photos/. Возвращает URL /photos/<file>."""
+    bot = get_bot()
+    if bot is None:
+        return None
+    try:
+        file = await bot.get_file(file_unique_id)
+        await bot.download_file(file.file_path, str(dest))
+        return f"/photos/{dest.name}"
+    except Exception as e:  # noqa: BLE001
+        log.warning("Не удалось скачать фото %s: %s", file_unique_id, e)
+        return None
+
+
+# ---------- SLA-монитор ----------
+async def sla_monitor(store: TicketStore, interval: int = 60) -> None:
+    """Раз в interval секунд ищет тикеты с просроченным SLA и уведомляет операторов."""
+    while True:
+        try:
+            await asyncio.sleep(interval)
+            for t in await store.overdue_sla():
+                await notify_admins_sla(t)
+                await store.mark_sla_notified(t["id"])
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:  # noqa: BLE001
+            log.warning("Ошибка SLA-монитора: %s", e)
+
+
+async def notify_admins_sla(ticket: dict) -> None:
+    bot = get_bot()
+    if bot is None:
+        log.info("[демо] SLA просрочен в #%s (%s)", ticket["number"], ticket["full_name"])
+        return
+    text = (f"⚠️ <b>SLA просрочен!</b> Тикет <b>#{ticket['number']}</b> без ответа\n"
+            f"👤 {ticket['full_name']} · {_category_title(ticket['category'])}")
+    for admin_id in admin_ids():
+        try:
+            await bot.send_message(admin_id, text, reply_markup=ticket_link_kb(ticket["id"]), parse_mode="HTML")
+        except Exception as e:  # noqa: BLE001
+            log.warning("Не удалось уведомить админа %s: %s", admin_id, e)
 
 
 # ---------- запуск ----------
